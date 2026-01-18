@@ -382,6 +382,13 @@ function saveSessions() {
   }
 }
 
+/* ✅ NEW: delete session by id (minimal) */
+function deleteSessionById(id) {
+  sessions = sessions.filter((s) => s.id !== id);
+  saveSessions();
+  renderRecentSessions();
+}
+
 function createNewSession(name) {
   const id = `session_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const now = new Date();
@@ -465,8 +472,19 @@ function renderRecentSessions() {
               <div class="font-semibold text-sm text-white">${escapeHtml(s.name)}</div>
               <div class="text-xs text-white/50">${dt}</div>
             </div>
-            <div class="text-right">
+
+            <!-- ✅ MINIMAL CHANGE: wrap score + add delete button -->
+            <div class="text-right flex items-center gap-2">
               <div class="text-lg font-bold ${scoreClass}">${scoreText}</div>
+
+              <button
+                class="text-white/50 hover:text-red-300 transition"
+                title="Delete"
+                onclick="event.stopPropagation(); deleteSession('${s.id}')"
+              >
+                <i class="fas fa-trash"></i>
+              </button>
+
               <i class="fas fa-chevron-down text-white/50 text-xs" id="${s.id}-icon"></i>
             </div>
           </div>
@@ -600,4 +618,9 @@ window.toggleSession = function (sessionId) {
 
   icon.classList.toggle("fa-chevron-down", !isHidden);
   icon.classList.toggle("fa-chevron-up", isHidden);
+};
+
+/* ✅ NEW: expose delete for inline onclick */
+window.deleteSession = function (id) {
+  deleteSessionById(id);
 };
