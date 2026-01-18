@@ -1,11 +1,9 @@
 import { loginUser, signupUser, authErrorMessage } from "./authentication.js";
 
-// --- Login and Signup Page ---
-// Handles toggling between Login/Signup views and form submits
-// using plain DOM APIs for simplicity and maintainability.
-
 function initAuthUI() {
-  // --- DOM Elements ---
+  console.log("login.js loaded");
+
+  // DOM Elements
   const alertEl = document.getElementById("authAlert");
   const loginView = document.getElementById("loginView");
   const signupView = document.getElementById("signupView");
@@ -15,108 +13,147 @@ function initAuthUI() {
   const signupForm = document.getElementById("signupForm");
   const redirectUrl = "../index.html";
 
-  // --- Helper Functions ---
-  // Toggle element visibility
+  console.log({
+    alertEl: !!alertEl,
+    loginView: !!loginView,
+    signupView: !!signupView,
+    toSignupBtn: !!toSignupBtn,
+    toLoginBtn: !!toLoginBtn,
+    loginForm: !!loginForm,
+    signupForm: !!signupForm,
+  });
+
   function setVisible(el, visible) {
+    if (!el) return;
     el.classList.toggle("hidden", !visible);
   }
 
-  // Show error message with accessibility and auto-hide
-  let errorTimeout;
   function showError(msg) {
+    console.log("showError:", msg);
+    if (!alertEl) {
+      window.alert(msg || "");
+      return;
+    }
     alertEl.textContent = msg || "";
     alertEl.classList.remove("hidden");
-    clearTimeout(errorTimeout);
-    errorTimeout = setTimeout(hideError, 5000); // Auto-hide after 5s
   }
 
-  // Hide error message
   function hideError() {
+    if (!alertEl) return;
     alertEl.classList.add("hidden");
     alertEl.textContent = "";
-    clearTimeout(errorTimeout);
   }
 
-  // Enable/disable submit button for forms
   function setSubmitDisabled(form, disabled) {
     const submitBtn = form?.querySelector('[type="submit"]');
     if (submitBtn) submitBtn.disabled = disabled;
   }
 
-  // --- Event Listeners ---
+  function goToLoginView() {
+    console.log("➡️ Switching to LOGIN view");
+    setVisible(signupView, false);
+    setVisible(loginView, true);
+    setTimeout(() => document.querySelector("#loginEmail")?.focus(), 0);
+  }
+
+  function goToSignupView() {
+    console.log("➡️ Switching to SIGNUP view");
+    setVisible(loginView, false);
+    setVisible(signupView, true);
+    setTimeout(() => document.querySelector("#signupName")?.focus(), 0);
+  }
+
   // Toggle buttons
   toSignupBtn?.addEventListener("click", (e) => {
     e.preventDefault();
     hideError();
-    setVisible(loginView, false);
-    setVisible(signupView, true);
-    signupView?.querySelector("input")?.focus();
+    goToSignupView();
   });
 
   toLoginBtn?.addEventListener("click", (e) => {
     e.preventDefault();
     hideError();
-    setVisible(signupView, false);
-    setVisible(loginView, true);
-    loginView?.querySelector("input")?.focus();
+    goToLoginView();
   });
 
-  // Login form submit
+  // Login submit
   loginForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
     hideError();
+
+    console.log("✅ login submit fired");
+
     const email = document.querySelector("#loginEmail")?.value?.trim() ?? "";
     const password = document.querySelector("#loginPassword")?.value ?? "";
+
     if (!email || !password) {
       showError("Please enter your email and password.");
       return;
     }
+
     setSubmitDisabled(loginForm, true);
+
     try {
       await loginUser(email, password);
+      console.log("loginUser success");
+
       const redirect =
         sessionStorage.getItem("afterLoginRedirect") || redirectUrl;
 
       sessionStorage.removeItem("afterLoginRedirect");
       location.href = redirect;
     } catch (err) {
+      console.log("❌ loginUser error", err);
       showError(authErrorMessage(err));
-      console.error(err);
     } finally {
       setSubmitDisabled(loginForm, false);
     }
   });
 
-  // Signup form submit
+  // Signup submit
   signupForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
     hideError();
+
+    console.log("signup submit fired");
+    window.alert("Signup submit fired"); // THIS MUST POP UP
+
     const name = document.querySelector("#signupName")?.value?.trim() ?? "";
     const email = document.querySelector("#signupEmail")?.value?.trim() ?? "";
     const password = document.querySelector("#signupPassword")?.value ?? "";
+
     if (!name || !email || !password) {
       showError("Please ensure all fields are filled.");
       return;
     }
+
     setSubmitDisabled(signupForm, true);
+
     try {
+      console.log("⏳ calling signupUser...");
       await signupUser(name, email, password);
+      console.log("✅ signupUser success");
 
-      alertEl.textContent = "Signup successful! Redirecting to login...";
-      alertEl.classList.remove("hidden");
+      window.alert("✅ Signup successful! Now log in.");
+      goToLoginView();
 
-      // IMPORTANT: redirect to the actual login page
-      setTimeout(() => {
-        window.location.href = "/login.html";
-      }, 1200);
+      const loginEmailEl = document.querySelector("#loginEmail");
+      if (loginEmailEl) loginEmailEl.value = email;
+
+      // clear signup fields
+      const n = document.querySelector("#signupName");
+      const em = document.querySelector("#signupEmail");
+      const pw = document.querySelector("#signupPassword");
+      if (n) n.value = "";
+      if (em) em.value = "";
+      if (pw) pw.value = "";
     } catch (err) {
+      console.log("signupUser error", err);
       showError(authErrorMessage(err));
-      console.error(err);
     } finally {
       setSubmitDisabled(signupForm, false);
     }
   });
 }
 
-// --- Initialize UI on DOMContentLoaded ---
 document.addEventListener("DOMContentLoaded", initAuthUI);

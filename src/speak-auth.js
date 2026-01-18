@@ -2,29 +2,12 @@
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "./firebaseConfig.js";
 
+
 const authBtn = document.getElementById("authBtn");
 const speakNowBtn = document.getElementById("speakNowBtn");
-const userNameEl = document.getElementById("userName");
 
-// helper: choose best name
-function getNiceName(user) {
-  const dn = (user?.displayName || "").trim();
-  if (dn) return dn;
-
-  const email = (user?.email || "").trim();
-  if (email) return email.split("@")[0]; // simple fallback
-
-  return "USER";
-}
-
-// Toggle LOGIN / SIGN OUT + set username
+// Toggle LOGIN / SIGN OUT
 onAuthStateChanged(auth, (user) => {
-  // update hero name
-  if (userNameEl) {
-    userNameEl.textContent = user ? getNiceName(user) : "USER";
-  }
-
-  // toggle nav button
   if (!authBtn) return;
 
   if (user) {
@@ -34,7 +17,7 @@ onAuthStateChanged(auth, (user) => {
     authBtn.onclick = async (e) => {
       e.preventDefault();
       await signOut(auth);
-      // stay on index; listener will flip button + name back
+      window.location.href = "/index.html";
     };
   } else {
     authBtn.textContent = "LOGIN";
@@ -43,15 +26,17 @@ onAuthStateChanged(auth, (user) => {
   }
 });
 
-// Speak Now: if not logged in -> go login, then back to speaking
+// Handle SPEAK NOW click
 if (speakNowBtn) {
   speakNowBtn.addEventListener("click", (e) => {
     const user = auth.currentUser;
 
     if (!user) {
       e.preventDefault();
+      // remember where user wanted to go
       sessionStorage.setItem("afterLoginRedirect", "/speaking.html");
       window.location.href = "/login.html";
     }
+    // if logged in → default link works, goes to speaking.html
   });
 }
