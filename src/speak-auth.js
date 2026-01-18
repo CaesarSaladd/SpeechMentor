@@ -2,6 +2,17 @@
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "./firebaseConfig.js";
 
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    const name = user.displayName || "User";
+    console.log("Logged in as:", name);
+
+    // Example: put name in UI
+    const nameEl = document.getElementById("userName");
+    if (nameEl) nameEl.textContent = name;
+  }
+});
+
 
 const authBtn = document.getElementById("authBtn");
 const speakNowBtn = document.getElementById("speakNowBtn");
