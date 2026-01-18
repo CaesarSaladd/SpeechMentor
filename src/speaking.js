@@ -262,7 +262,8 @@ async function handleSubmit() {
     formData.append("audio", latestRecordingBlob, "recording.webm");
     formData.append("durationSeconds", String(seconds));
 
-    const res = await fetch("/api/analyze-audio", {
+    const API_BASE = import.meta.env.VITE_API_BASE || "";
+    const res = await fetch(`${API_BASE}/api/analyze-audio`, {
       method: "POST",
       body: formData,
     });
