@@ -116,20 +116,26 @@
                 </button>
               </div>
 
-              <!-- Audio preview (optional but nice) -->
+              <!-- Audio preview -->
               <div id="audioWrap" class="mt-6 hidden">
                 <div class="text-sm text-white/70 mb-2">Preview</div>
                 <audio id="recordedAudio" controls class="w-full"></audio>
               </div>
 
-              <!-- Error / status message -->
+              <!-- Error box -->
               <div
-                id="statusMessage"
-                class="mt-4 text-left text-sm text-white/80 whitespace-pre-wrap hidden"
-              ></div>
+                id="errorBox"
+                class="hidden mt-6 border border-red-500/30 bg-red-500/10 rounded-lg p-4 text-left"
+              >
+                <div class="font-semibold text-red-200 mb-1">Error</div>
+                <pre
+                  id="errorText"
+                  class="text-xs text-red-100/80 whitespace-pre-wrap"
+                ></pre>
+              </div>
             </div>
 
-            <!-- Analysis Results (REAL DATA) -->
+            <!-- Analysis Results -->
             <div id="analysisPanel" class="hidden">
               <h3 class="text-xl font-semibold text-white mb-4">
                 Session Analysis
@@ -260,18 +266,6 @@
                 <h4 class="font-semibold text-white mb-2">Filler Breakdown</h4>
                 <div id="fillerList" class="text-sm text-white/70">—</div>
               </div>
-
-              <!-- Error box -->
-              <div
-                id="errorBox"
-                class="hidden mt-6 border border-red-500/30 bg-red-500/10 rounded-lg p-4"
-              >
-                <div class="font-semibold text-red-200 mb-1">Error</div>
-                <pre
-                  id="errorText"
-                  class="text-xs text-red-100/80 whitespace-pre-wrap"
-                ></pre>
-              </div>
             </div>
           </div>
         </div>
@@ -323,86 +317,56 @@
             </h3>
 
             <div
+              id="recentSessionsScroll"
               class="space-y-3 max-h-96 overflow-y-auto pr-2"
               style="
                 scrollbar-width: thin;
                 scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
               "
             >
-              <div
-                class="session-card border-l-4 border-green-400 bg-white/5 rounded cursor-pointer hover:bg-white/10 transition"
-              >
-                <div
-                  class="session-header pl-3 py-2"
-                  onclick="toggleSession('session1')"
-                >
-                  <div class="flex justify-between items-center">
-                    <div>
-                      <div class="font-semibold text-sm text-white">
-                        Interview Practice
-                      </div>
-                      <div class="text-xs text-white/50">Today, 2:30 PM</div>
-                    </div>
-                    <div class="text-right">
-                      <div class="text-lg font-bold text-green-400">88%</div>
-                      <i
-                        class="fas fa-chevron-down text-white/50 text-xs"
-                        id="session1-icon"
-                      ></i>
-                    </div>
-                  </div>
-                </div>
-                <div
-                  id="session1"
-                  class="session-details hidden pl-3 pr-3 pb-3 pt-2 border-t border-white/10 mt-2"
-                >
-                  <div class="grid grid-cols-2 gap-2 mb-3 text-xs">
-                    <div>
-                      <span class="text-white/50">Clarity:</span>
-                      <span class="text-green-400 font-semibold">92%</span>
-                    </div>
-                    <div>
-                      <span class="text-white/50">Pace:</span>
-                      <span class="text-blue-400 font-semibold">138 WPM</span>
-                    </div>
-                    <div>
-                      <span class="text-white/50">Volume:</span>
-                      <span class="text-purple-400 font-semibold">Good</span>
-                    </div>
-                    <div>
-                      <span class="text-white/50">Fillers:</span>
-                      <span class="text-yellow-400 font-semibold">2</span>
-                    </div>
-                  </div>
-                  <div class="text-xs">
-                    <div class="mb-2">
-                      <span class="text-green-400 font-semibold"
-                        >Strengths:</span
-                      >
-                      <p class="text-white/60 mt-1">
-                        Strong opening, confident tone, natural pauses
-                      </p>
-                    </div>
-                    <div>
-                      <span class="text-orange-400 font-semibold"
-                        >Improve:</span
-                      >
-                      <p class="text-white/60 mt-1">
-                        Vary pace more, reduce "um" usage
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Keep the rest of your demo sessions if you want -->
+              <div id="recentSessionsList" class="space-y-3 w-full"></div>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ✅ Vite should load your JS as a module -->
+    <div
+      id="sessionModal"
+      class="fixed inset-0 hidden items-center justify-center bg-black/60 backdrop-blur-sm z-50"
+    >
+      <div
+        class="w-[92%] max-w-md rounded-2xl border border-white/10 bg-slate-900/80 shadow-[0_40px_120px_rgba(0,0,0,0.55)] p-6"
+      >
+        <h3 class="text-xl font-semibold text-white mb-2">Name this session</h3>
+        <p class="text-sm text-white/60 mb-4">
+          Give it a title so it shows in Recent Sessions.
+        </p>
+
+        <input
+          id="sessionNameInput"
+          type="text"
+          placeholder="e.g. Interview Practice"
+          class="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/40 outline-none focus:border-white/30"
+        />
+
+        <div class="mt-5 flex justify-end gap-3">
+          <button
+            id="sessionNameCancel"
+            class="rounded-full border border-white/20 bg-white/5 px-6 py-2 text-xs font-semibold tracking-widest text-white/80 hover:bg-white/10 transition"
+          >
+            CANCEL
+          </button>
+          <button
+            id="sessionNameStart"
+            class="rounded-full bg-gradient-to-r from-fuchsia-500 to-violet-500 px-6 py-2 text-xs font-semibold tracking-widest text-white hover:from-fuchsia-600 hover:to-violet-600 transition"
+          >
+            START
+          </button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/src/speaking.js"></script>
   </body>
 </html>

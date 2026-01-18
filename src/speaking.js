@@ -17,7 +17,23 @@ const analysisPanel = document.getElementById("analysisPanel");
 
 const audioWrap = document.getElementById("audioWrap");
 
+// Modal nodes
+const sessionModal = document.getElementById("sessionModal");
+const sessionNameInput = document.getElementById("sessionNameInput");
+const sessionNameCancel = document.getElementById("sessionNameCancel");
+const sessionNameStart = document.getElementById("sessionNameStart");
+
+// Recent Sessions container
+const recentSessionsList = document.getElementById("recentSessionsList");
+
 let latestRecordingBlob = null;
+
+// Session state
+let currentSessionId = null;
+
+// Persisted sessions
+const STORAGE_KEY = "speechmentor_recent_sessions_v1";
+let sessions = loadSessions();
 
 // ---- Analysis DOM nodes ----
 const mDuration = document.getElementById("mDuration");
@@ -40,6 +56,7 @@ const errorText = document.getElementById("errorText");
 
 initRecorder();
 bindUIEvents();
+renderRecentSessions();
 
 async function initRecorder() {
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -59,6 +76,45 @@ async function initRecorder() {
   }
 }
 
+/* -----------------------------
+   Recording flow (with modal)
+------------------------------ */
+
+function openSessionModal() {
+  hideError();
+
+  if (!sessionModal) return;
+  sessionModal.classList.remove("hidden");
+  sessionModal.classList.add("flex");
+
+  // clear & focus
+  sessionNameInput.value = "";
+  setTimeout(() => sessionNameInput.focus(), 0);
+}
+
+function closeSessionModal() {
+  if (!sessionModal) return;
+  sessionModal.classList.add("hidden");
+  sessionModal.classList.remove("flex");
+}
+
+function confirmSessionNameAndStart() {
+  const name = (sessionNameInput.value || "").trim();
+  if (!name) {
+    showError("Please enter a session name before recording.");
+    return;
+  }
+
+  closeSessionModal();
+
+  // create a session record immediately (so it appears in recent sessions)
+  const session = createNewSession(name);
+  currentSessionId = session.id;
+  renderRecentSessions();
+
+  startRecording();
+}
+
 function startRecording() {
   if (!mediaRecorder || isRecording) return;
 
@@ -68,7 +124,7 @@ function startRecording() {
   audioChunks = [];
   latestRecordingBlob = null;
 
-  // hide preview while recording (clean UI)
+  // hide preview while recording
   if (audioWrap) audioWrap.classList.add("hidden");
 
   mediaRecorder.start();
@@ -98,7 +154,7 @@ function handleStop() {
   const audioURL = URL.createObjectURL(blob);
   renderAudioPlayer(audioURL);
 
-  // ✅ show preview after stop
+  // show preview after stop
   if (audioWrap) audioWrap.classList.remove("hidden");
 }
 
@@ -110,7 +166,9 @@ function startTimer() {
     seconds++;
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    timer.textContent = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+    timer.textContent = `${String(mins).padStart(2, "0")}:${String(
+      secs,
+    ).padStart(2, "0")}`;
   }, 1000);
 }
 
@@ -133,17 +191,37 @@ function updateUIOnStop() {
 }
 
 function renderAudioPlayer(src) {
-  // use the existing audio element from HTML
   const audio = document.getElementById("recordedAudio");
   if (!audio) return;
   audio.src = src;
 }
 
 function bindUIEvents() {
-  recordBtn.addEventListener("click", startRecording);
+  // IMPORTANT: record now opens modal first
+  recordBtn.addEventListener("click", openSessionModal);
+
   stopBtn.addEventListener("click", stopRecording);
   retryBtn.addEventListener("click", handleRetry);
   submitBtn.addEventListener("click", handleSubmit);
+
+  // modal buttons
+  sessionNameCancel.addEventListener("click", () => {
+    closeSessionModal();
+    hideError();
+  });
+
+  sessionNameStart.addEventListener("click", confirmSessionNameAndStart);
+
+  // allow Enter to start
+  sessionNameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") confirmSessionNameAndStart();
+    if (e.key === "Escape") closeSessionModal();
+  });
+
+  // click outside modal content to close
+  sessionModal.addEventListener("click", (e) => {
+    if (e.target === sessionModal) closeSessionModal();
+  });
 }
 
 function handleRetry() {
@@ -155,7 +233,14 @@ function handleRetry() {
   latestRecordingBlob = null;
 
   if (audioWrap) audioWrap.classList.add("hidden");
+
+  // Keep the session entry, but mark it as "retry" friendly
+  // If you want a new session each time, tell me and I’ll change it.
 }
+
+/* -----------------------------
+   Submit + analysis
+------------------------------ */
 
 async function handleSubmit() {
   hideError();
@@ -177,22 +262,39 @@ async function handleSubmit() {
     formData.append("audio", latestRecordingBlob, "recording.webm");
     formData.append("durationSeconds", String(seconds));
 
-    // ✅ With Vite proxy, this will hit your Node backend
     const res = await fetch("/api/analyze-audio", {
       method: "POST",
       body: formData,
     });
 
-    const data = await res.json();
+    // safer parsing so it doesn't crash if backend returns non-json
+    const contentType = res.headers.get("content-type") || "";
+    let data;
 
-    if (!data.ok) {
+    if (contentType.includes("application/json")) {
+      data = await res.json();
+    } else {
+      const text = await res.text();
       showError(
-        `Error: ${data.error || "Unknown error"}\n\n${data.details || ""}`,
+        `Backend did not return JSON.\nStatus: ${res.status}\n\n${text.slice(0, 600)}`,
+      );
+      return;
+    }
+
+    if (!res.ok || !data.ok) {
+      showError(
+        `Error: ${data?.error || "Request failed"}\n\n${data?.details || ""}`,
       );
       return;
     }
 
     renderAnalysis(data.result);
+
+    // ✅ update the session card with real analysis data
+    if (currentSessionId) {
+      updateSessionWithAnalysis(currentSessionId, data.result);
+      renderRecentSessions();
+    }
   } catch (err) {
     console.error(err);
     showError("Failed to analyze audio. Check server console.");
@@ -258,6 +360,209 @@ function renderAnalysis(r) {
   }
 }
 
+/* -----------------------------
+   Recent Sessions (render + storage)
+------------------------------ */
+
+function loadSessions() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSessions() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions.slice(0, 20)));
+  } catch {
+    // ignore
+  }
+}
+
+function createNewSession(name) {
+  const id = `session_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const now = new Date();
+
+  const session = {
+    id,
+    name,
+    createdAt: now.toISOString(),
+    // analysis placeholders
+    score: null,
+    clarity: null,
+    wpm: null,
+    fillers: null,
+    transcript: null,
+    summary: null,
+  };
+
+  sessions = [session, ...sessions].slice(0, 20);
+  saveSessions();
+  return session;
+}
+
+function updateSessionWithAnalysis(id, r) {
+  const idx = sessions.findIndex((s) => s.id === id);
+  if (idx === -1) return;
+
+  const score = clampInt(r?.scores?.confidence ?? 0, 0, 100); // using your "confidence" as the top score
+
+  sessions[idx] = {
+    ...sessions[idx],
+    score,
+    clarity: clampInt(r?.scores?.clarity ?? 0, 0, 100),
+    wpm: clampInt(r?.wpm ?? 0, 0, 500),
+    fillers: clampInt(r?.filler?.total ?? 0, 0, 999),
+    transcript: r?.transcript ?? "",
+    summary: r?.summary ?? "",
+  };
+
+  saveSessions();
+}
+
+function renderRecentSessions() {
+  if (!recentSessionsList) return;
+
+  // If no sessions yet
+  if (!sessions.length) {
+    recentSessionsList.innerHTML = `
+      <div class="text-sm text-white/50">
+        No sessions yet. Start recording to add one here.
+      </div>
+    `;
+    return;
+  }
+
+  recentSessionsList.innerHTML = sessions
+    .map((s) => {
+      const dt = formatSessionTime(s.createdAt);
+      const scoreText = s.score == null ? "—" : `${s.score}%`;
+
+      const borderClass = getScoreBorderClass(s.score);
+      const scoreClass = getScoreTextClass(s.score);
+
+      const detailClarity = s.clarity == null ? "—" : `${s.clarity}%`;
+      const detailPace = s.wpm == null ? "—" : `${s.wpm} WPM`;
+      const detailFillers = s.fillers == null ? "—" : `${s.fillers}`;
+
+      const strengths =
+        s.score == null
+          ? "Complete analysis to see strengths"
+          : getStrengthsLine(s);
+
+      const improve =
+        s.score == null ? "Submit your recording for tips" : getImproveLine(s);
+
+      return `
+      <div class="session-card max-w-full border-l-4 ${borderClass} bg-white/5 rounded cursor-pointer hover:bg-white/10 transition">
+
+        <div class="session-header pl-3 py-2" onclick="toggleSession('${s.id}')">
+          <div class="flex justify-between items-center">
+            <div>
+              <div class="font-semibold text-sm text-white">${escapeHtml(s.name)}</div>
+              <div class="text-xs text-white/50">${dt}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-lg font-bold ${scoreClass}">${scoreText}</div>
+              <i class="fas fa-chevron-down text-white/50 text-xs" id="${s.id}-icon"></i>
+            </div>
+          </div>
+        </div>
+
+        <div id="${s.id}" class="session-details hidden pl-3 pr-3 pb-3 pt-2 border-t border-white/10 mt-2">
+          <div class="grid grid-cols-2 gap-2 mb-3 text-xs">
+            <div>
+              <span class="text-white/50">Clarity:</span>
+              <span class="text-green-400 font-semibold">${detailClarity}</span>
+            </div>
+            <div>
+              <span class="text-white/50">Pace:</span>
+              <span class="text-blue-400 font-semibold">${detailPace}</span>
+            </div>
+            <div>
+              <span class="text-white/50">Volume:</span>
+              <span class="text-purple-400 font-semibold">—</span>
+            </div>
+            <div>
+              <span class="text-white/50">Fillers:</span>
+              <span class="text-yellow-400 font-semibold">${detailFillers}</span>
+            </div>
+          </div>
+
+          <div class="text-xs">
+            <div class="mb-2">
+              <span class="text-green-400 font-semibold">Strengths:</span>
+              <p class="text-white/60 mt-1">${escapeHtml(strengths)}</p>
+            </div>
+            <div>
+              <span class="text-orange-400 font-semibold">Improve:</span>
+              <p class="text-white/60 mt-1">${escapeHtml(improve)}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    })
+    .join("");
+}
+
+function formatSessionTime(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, {
+      weekday: "short",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function getScoreBorderClass(score) {
+  if (score == null) return "border-white/20";
+  if (score >= 80) return "border-green-400";
+  if (score >= 60) return "border-amber-300";
+  return "border-red-400";
+}
+
+function getScoreTextClass(score) {
+  if (score == null) return "text-white/60";
+  if (score >= 80) return "text-green-400";
+  if (score >= 60) return "text-amber-300";
+  return "text-red-400";
+}
+
+function getStrengthsLine(s) {
+  const parts = [];
+  if (s.clarity != null && s.clarity >= 80) parts.push("Clear structure");
+  if (s.wpm != null && s.wpm >= 120 && s.wpm <= 170) parts.push("Good pace");
+  if (s.fillers != null && s.fillers <= 3) parts.push("Low fillers");
+  return parts.length ? parts.join(", ") : "Solid delivery";
+}
+
+function getImproveLine(s) {
+  if (s.fillers != null && s.fillers > 3)
+    return 'Reduce filler words like "um" and "like"';
+  if (s.wpm != null && s.wpm > 180) return "Slow down slightly and add pauses";
+  if (s.wpm != null && s.wpm < 100)
+    return "Try a bit faster pace to sound confident";
+  return "Add stronger opening + closing";
+}
+
+function clampInt(n, min, max) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return min;
+  return Math.max(min, Math.min(max, Math.round(x)));
+}
+
+/* -----------------------------
+   Errors + helpers
+------------------------------ */
+
 function showError(msg) {
   if (!errorBox || !errorText) {
     alert(msg);
@@ -282,12 +587,17 @@ function escapeHtml(str) {
     .replaceAll("'", "&#039;");
 }
 
-// keep your session toggle
+/* -----------------------------
+   Keep your session toggle
+------------------------------ */
 window.toggleSession = function (sessionId) {
   const details = document.getElementById(sessionId);
   const icon = document.getElementById(`${sessionId}-icon`);
+  if (!details || !icon) return;
+
   const isHidden = details.classList.contains("hidden");
   details.classList.toggle("hidden");
+
   icon.classList.toggle("fa-chevron-down", !isHidden);
   icon.classList.toggle("fa-chevron-up", isHidden);
 };
